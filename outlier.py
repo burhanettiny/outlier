@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 st.set_page_config(page_title="Interlaboratory Comparison Tool", layout="wide")
-
 st.title("🔬 Interlaboratory Comparison & Outlier Detection")
 
 st.write("👉 Excel’den verilerinizi kopyalayın ve aşağıdaki kutuya yapıştırın (Ctrl+V).")
@@ -76,7 +75,7 @@ if df is not None:
         for i, row in results.iterrows():
             if row["outlier_z"]:
                 outlier_suggestions.append(
-                    f"Lab {i}: Z-score = {row['zscore']:.2f} → Bu ölçüm 2σ sınırının dışında, olası ölçüm hatası veya laboratuvar sapması."
+                    f"Lab {i+1}: Z-score = {row['zscore']:.2f} → Bu ölçüm 2σ sınırının dışında, olası ölçüm hatası veya laboratuvar sapması."
                 )
 
     if "Modified Z-score" in methods:
@@ -89,22 +88,33 @@ if df is not None:
         for i, row in results.iterrows():
             if row["outlier_modz"]:
                 outlier_suggestions.append(
-                    f"Lab {i}: Modified Z-score = {row['modz']:.2f} → Bu ölçüm median’dan 3.5 kat MAD sapma gösteriyor, dikkat edilmesi önerilir."
+                    f"Lab {i+1}: Modified Z-score = {row['modz']:.2f} → Bu ölçüm median’dan 3.5 kat MAD sapma gösteriyor, dikkat edilmesi önerilir."
                 )
 
     if "Grubbs test" in methods:
         try:
-            n = len(results[x_col])
-            mean_x = np.mean(results[x_col])
-            std_x = np.std(results[x_col], ddof=1)
-            G = np.max(np.abs(results[x_col] - mean_x)) / std_x
-            results["Grubbs_G"] = G
-            crit = ( (n-1)/np.sqrt(n) ) * np.sqrt( stats.t.ppf(1-0.05/(2*n), n-2)**2 / (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2) )
-            results["outlier_grubbs"] = G > crit
-            if G > crit:
-                outlier_idx = results[x_col].sub(mean_x).abs().idxmax()
+            # Grubbs testi için iteratif kontrol: en uç değer varsa çıkar ve tekrar hesapla
+            data = results[x_col].copy()
+            n = len(data)
+            grubbs_outliers = []
+            while n > 2:
+                mean_x = np.mean(data)
+                std_x = np.std(data, ddof=1)
+                diff = np.abs(data - mean_x)
+                max_idx = diff.idxmax()
+                G = diff[max_idx] / std_x
+                crit = ( (n-1)/np.sqrt(n) ) * np.sqrt( stats.t.ppf(1-0.05/(2*n), n-2)**2 / (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2) )
+                if G > crit:
+                    lab_num = max_idx + 1
+                    grubbs_outliers.append((lab_num, G, crit))
+                    data = data.drop(max_idx)
+                    n = len(data)
+                else:
+                    break
+            results["outlier_grubbs"] = results.index.map(lambda i: any(i+1==o[0] for o in grubbs_outliers))
+            for lab_num, G_val, crit_val in grubbs_outliers:
                 outlier_suggestions.append(
-                    f"Lab {outlier_idx}: Grubbs G = {G:.4f} > kritik {crit:.4f} → En büyük sapma, outlier olarak değerlendirilebilir."
+                    f"Lab {lab_num}: Grubbs G = {G_val:.4f} > kritik {crit_val:.4f} → En uç değer, outlier olarak değerlendirilir."
                 )
         except Exception as e:
             st.warning(f"Grubbs test çalıştırılamadı: {e}")
