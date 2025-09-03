@@ -138,16 +138,24 @@ if df is not None:
     else:
         st.markdown("Tespit edilen outlier yok. Veriler çoğunlukla konsensüs ile uyumlu.")
 
-    # --- Plot with lab IDs and colored outliers
-    st.subheader("📈 Visualization")
-    fig, ax = plt.subplots(figsize=(9, 4))
-    lab_ids = np.arange(1, len(results) + 1)
-    colors = ['red' if results.loc[i, "outlier_z"] or results.loc[i, "outlier_modz"] or results.loc[i, "outlier_grubbs"] else 'blue' for i in results.index]
-    ax.errorbar(lab_ids, results[x_col], yerr=results[u_col], fmt='o', color='black', ecolor=colors, mec=colors, mfc=colors, label="Labs")
-    ax.axhline(consensus, color='green', linestyle='--', label="Consensus")
-    ax.axhspan(ci95_low, ci95_high, color='green', alpha=0.2, label="95% CI")
-    ax.set_xlabel("Lab ID")
-    ax.set_xticks(lab_ids)
-    ax.set_ylabel("Measured value")
-    ax.legend(fontsize=8)
-    st.pyplot(fig)
+# --- Plot with lab IDs and colored outliers
+st.subheader("📈 Visualization")
+fig, ax = plt.subplots(figsize=(9, 4))
+lab_ids = np.arange(1, len(results) + 1)
+
+# Outlier maskesi
+outlier_mask = results["outlier_z"] | results["outlier_modz"] | results["outlier_grubbs"]
+
+# Normal ve outlier noktaları ayrı plotla
+ax.errorbar(lab_ids[~outlier_mask], results[x_col][~outlier_mask],
+            yerr=results[u_col][~outlier_mask], fmt='o', color='blue', label='Normal')
+ax.errorbar(lab_ids[outlier_mask], results[x_col][outlier_mask],
+            yerr=results[u_col][outlier_mask], fmt='o', color='red', label='Outlier')
+
+ax.axhline(consensus, color='green', linestyle='--', label="Consensus")
+ax.axhspan(ci95_low, ci95_high, color='green', alpha=0.2, label="95% CI")
+ax.set_xlabel("Lab ID")
+ax.set_xticks(lab_ids)
+ax.set_ylabel("Measured value")
+ax.legend(fontsize=8)
+st.pyplot(fig)
