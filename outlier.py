@@ -67,13 +67,17 @@ if df is not None:
     )
 
     results = df.copy()
+    outlier_suggestions = []
 
     # --- Apply methods
-    outlier_info = ""
     if "Z-score" in methods:
         results["zscore"] = (results[x_col] - consensus) / results[u_col]
         results["outlier_z"] = np.abs(results["zscore"]) > 2
-        outlier_info += "- Z-score: 2’den büyük değerler outlier kabul edilir.\n"
+        for i, row in results.iterrows():
+            if row["outlier_z"]:
+                outlier_suggestions.append(
+                    f"Lab {i}: Z-score = {row['zscore']:.2f} → Bu ölçüm 2σ sınırının dışında, olası ölçüm hatası veya laboratuvar sapması."
+                )
 
     if "Modified Z-score" in methods:
         median_x = np.median(results[x_col])
@@ -82,7 +86,11 @@ if df is not None:
             mad = 1e-6
         results["modz"] = 0.6745 * (results[x_col] - median_x) / mad
         results["outlier_modz"] = np.abs(results["modz"]) > 3.5
-        outlier_info += "- Modified Z-score: 3.5’den büyük değerler outlier kabul edilir.\n"
+        for i, row in results.iterrows():
+            if row["outlier_modz"]:
+                outlier_suggestions.append(
+                    f"Lab {i}: Modified Z-score = {row['modz']:.2f} → Bu ölçüm median’dan 3.5 kat MAD sapma gösteriyor, dikkat edilmesi önerilir."
+                )
 
     if "Grubbs test" in methods:
         try:
@@ -93,20 +101,23 @@ if df is not None:
             results["Grubbs_G"] = G
             crit = ( (n-1)/np.sqrt(n) ) * np.sqrt( stats.t.ppf(1-0.05/(2*n), n-2)**2 / (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2) )
             results["outlier_grubbs"] = G > crit
-            outlier_info += f"- Grubbs test: G = {G:.4f}, kritik değer = {crit:.4f}. En büyük sapma outlier olarak değerlendirilir.\n"
+            if G > crit:
+                outlier_idx = results[x_col].sub(mean_x).abs().idxmax()
+                outlier_suggestions.append(
+                    f"Lab {outlier_idx}: Grubbs G = {G:.4f} > kritik {crit:.4f} → En büyük sapma, outlier olarak değerlendirilebilir."
+                )
         except Exception as e:
             st.warning(f"Grubbs test çalıştırılamadı: {e}")
 
     st.subheader("✅ Results")
     st.dataframe(results, use_container_width=True)
 
-    st.subheader("ℹ️ Outlier Detection Explanation")
-    st.markdown("""
-    **Outlier tespiti önerisi:**  
-    - Öncelikle Z-score veya Modified Z-score yöntemi ile gözlemleri kontrol edebilirsiniz.  
-    - Eğer veri normal dağılıma uygunsa Grubbs testi kullanılabilir.  
-    - Outlier olan veriler ölçüm hatası veya laboratuvar hatasından kaynaklanabilir ve analizden çıkarılabilir.  
-    """ + outlier_info.replace("\n", "  \n"))
+    st.subheader("ℹ️ Outlier Detection Suggestions")
+    if outlier_suggestions:
+        for s in outlier_suggestions:
+            st.markdown(f"- {s}")
+    else:
+        st.markdown("Tespit edilen outlier yok. Veriler çoğunlukla konsensüs ile uyumlu.")
 
     # --- Plot
     st.subheader("📈 Visualization")
