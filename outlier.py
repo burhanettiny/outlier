@@ -57,8 +57,18 @@ if df is not None:
         format="%.4f"
     )
 
-    # --- Outlier detection methods
+    # --- Outlier detection method suggestion
     st.sidebar.header("📌 Outlier Detection Options")
+    try:
+        stat, p_val = stats.normaltest(df[x_col])
+        if p_val > 0.05:
+            method_suggestion = "Veri normal dağılıyor → Grubbs testi uygundur."
+        else:
+            method_suggestion = "Veri normal değil veya heterojen → Modified Z-score önerilir."
+    except:
+        method_suggestion = "Z-score veya Modified Z-score kullanılabilir."
+    st.sidebar.info(f"Öneri: {method_suggestion}")
+
     methods = st.sidebar.multiselect(
         "Select methods:",
         ["Z-score", "Modified Z-score", "Grubbs test"],
@@ -93,7 +103,6 @@ if df is not None:
 
     if "Grubbs test" in methods:
         try:
-            # Grubbs testi için iteratif kontrol: en uç değer varsa çıkar ve tekrar hesapla
             data = results[x_col].copy()
             n = len(data)
             grubbs_outliers = []
@@ -129,13 +138,16 @@ if df is not None:
     else:
         st.markdown("Tespit edilen outlier yok. Veriler çoğunlukla konsensüs ile uyumlu.")
 
-    # --- Plot
+    # --- Plot with lab IDs and colored outliers
     st.subheader("📈 Visualization")
-    fig, ax = plt.subplots(figsize=(7, 3))
-    ax.errorbar(results.index, results[x_col], yerr=results[u_col], fmt='o', label="Labs")
+    fig, ax = plt.subplots(figsize=(9, 4))
+    lab_ids = np.arange(1, len(results) + 1)
+    colors = ['red' if results.loc[i, "outlier_z"] or results.loc[i, "outlier_modz"] or results.loc[i, "outlier_grubbs"] else 'blue' for i in results.index]
+    ax.errorbar(lab_ids, results[x_col], yerr=results[u_col], fmt='o', color='black', ecolor=colors, mec=colors, mfc=colors, label="Labs")
     ax.axhline(consensus, color='green', linestyle='--', label="Consensus")
     ax.axhspan(ci95_low, ci95_high, color='green', alpha=0.2, label="95% CI")
     ax.set_xlabel("Lab ID")
+    ax.set_xticks(lab_ids)
     ax.set_ylabel("Measured value")
     ax.legend(fontsize=8)
     st.pyplot(fig)
