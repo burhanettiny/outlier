@@ -57,7 +57,7 @@ if df is not None:
         format="%.4f"
     )
 
-    # --- Outlier detection method suggestion
+    # --- Outlier detection method suggestion with rationale
     st.sidebar.header("📌 Outlier Detection Options")
     try:
         stat, p_val = stats.normaltest(df[x_col])
@@ -70,7 +70,7 @@ if df is not None:
     st.sidebar.info(f"Öneri: {method_suggestion}")
 
     methods = st.sidebar.multiselect(
-        "Select methods:",
+        "Select methods (with rationale):",
         ["Z-score", "Modified Z-score", "Grubbs test"],
         default=["Z-score"]
     )
@@ -138,24 +138,24 @@ if df is not None:
     else:
         st.markdown("Tespit edilen outlier yok. Veriler çoğunlukla konsensüs ile uyumlu.")
 
-# --- Plot with lab IDs and colored outliers
-st.subheader("📈 Visualization")
-fig, ax = plt.subplots(figsize=(9, 4))
-lab_ids = np.arange(1, len(results) + 1)
+    # --- Plot with lab IDs and colored outliers
+    st.subheader("📈 Visualization")
+    fig, ax = plt.subplots(figsize=(9, 4))
+    lab_ids = np.arange(1, len(results) + 1)
 
-# Outlier maskesi
-outlier_mask = results["outlier_z"] | results["outlier_modz"] | results["outlier_grubbs"]
+    # Outlier maskesi
+    outlier_mask = results.get("outlier_z", False) | results.get("outlier_modz", False) | results.get("outlier_grubbs", False)
 
-# Normal ve outlier noktaları ayrı plotla
-ax.errorbar(lab_ids[~outlier_mask], results[x_col][~outlier_mask],
-            yerr=results[u_col][~outlier_mask], fmt='o', color='blue', label='Normal')
-ax.errorbar(lab_ids[outlier_mask], results[x_col][outlier_mask],
-            yerr=results[u_col][outlier_mask], fmt='o', color='red', label='Outlier')
+    # Normal ve outlier noktaları ayrı plotla
+    ax.errorbar(lab_ids[~outlier_mask], results[x_col][~outlier_mask],
+                yerr=results[u_col][~outlier_mask], fmt='o', color='blue', label='Normal')
+    ax.errorbar(lab_ids[outlier_mask], results[x_col][outlier_mask],
+                yerr=results[u_col][outlier_mask], fmt='o', color='red', label='Outlier')
 
-ax.axhline(consensus, color='green', linestyle='--', label="Consensus")
-ax.axhspan(ci95_low, ci95_high, color='green', alpha=0.2, label="95% CI")
-ax.set_xlabel("Lab ID")
-ax.set_xticks(lab_ids)
-ax.set_ylabel("Measured value")
-ax.legend(fontsize=8)
-st.pyplot(fig)
+    ax.axhline(consensus, color='green', linestyle='--', label="Consensus")
+    ax.axhspan(ci95_low, ci95_high, color='green', alpha=0.2, label="95% CI")
+    ax.set_xlabel("Lab ID")
+    ax.set_xticks(lab_ids)
+    ax.set_ylabel("Measured value")
+    ax.legend(fontsize=8)
+    st.pyplot(fig)
