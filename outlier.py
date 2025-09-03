@@ -8,7 +8,7 @@ from scipy import stats
 st.set_page_config(page_title="Interlaboratory Comparison Tool", layout="wide")
 st.title("🔬 Interlaboratory Comparison & Outlier Detection")
 
-st.write("👉 Excel’den verilerinizi kopyalayın ve aşağıdaki kutuya yapıştırın (Ctrl+V).")
+st.write("👉 Copy your data from Excel and paste it below (Ctrl+V).")
 
 # --- Paste Excel data
 pasted_data = st.text_area("Paste here:", height=200)
@@ -19,7 +19,7 @@ if pasted_data:
         df = pd.read_csv(io.StringIO(pasted_data), sep="\t")
         st.success("✅ Data parsed successfully!")
     except Exception as e:
-        st.error(f"Veri okunamadı: {e}")
+        st.error(f"Failed to read data: {e}")
 
 if df is not None:
     st.subheader("📊 Input Data")
@@ -57,20 +57,20 @@ if df is not None:
         format="%.4f"
     )
 
-    # --- Outlier detection method suggestion with rationale
+    # --- Outlier detection method suggestion
     st.sidebar.header("📌 Outlier Detection Options")
     try:
         stat, p_val = stats.normaltest(df[x_col])
         if p_val > 0.05:
-            method_suggestion = "Veri normal dağılıyor → Grubbs testi uygundur."
+            method_suggestion = "Data is normally distributed → Grubbs test is suitable."
         else:
-            method_suggestion = "Veri normal değil veya heterojen → Modified Z-score önerilir."
+            method_suggestion = "Data is non-normal or heterogeneous → Modified Z-score is recommended."
     except:
-        method_suggestion = "Z-score veya Modified Z-score kullanılabilir."
-    st.sidebar.info(f"Öneri: {method_suggestion}")
+        method_suggestion = "Z-score or Modified Z-score can be used."
+    st.sidebar.info(f"Suggestion: {method_suggestion}")
 
     methods = st.sidebar.multiselect(
-        "Select methods (with rationale):",
+        "Select methods:",
         ["Z-score", "Modified Z-score", "Grubbs test"],
         default=["Z-score"]
     )
@@ -85,7 +85,7 @@ if df is not None:
         for i, row in results.iterrows():
             if row["outlier_z"]:
                 outlier_suggestions.append(
-                    f"Lab {i+1}: Z-score = {row['zscore']:.2f} → Bu ölçüm 2σ sınırının dışında, olası ölçüm hatası veya laboratuvar sapması."
+                    f"Lab {i+1}: Z-score = {row['zscore']:.2f} → This measurement exceeds 2σ limit, possible measurement error or lab deviation."
                 )
 
     if "Modified Z-score" in methods:
@@ -98,7 +98,7 @@ if df is not None:
         for i, row in results.iterrows():
             if row["outlier_modz"]:
                 outlier_suggestions.append(
-                    f"Lab {i+1}: Modified Z-score = {row['modz']:.2f} → Bu ölçüm median’dan 3.5 kat MAD sapma gösteriyor, dikkat edilmesi önerilir."
+                    f"Lab {i+1}: Modified Z-score = {row['modz']:.2f} → This measurement deviates more than 3.5 MAD from the median, caution advised."
                 )
 
     if "Grubbs test" in methods:
@@ -112,7 +112,7 @@ if df is not None:
                 diff = np.abs(data - mean_x)
                 max_idx = diff.idxmax()
                 G = diff[max_idx] / std_x
-                crit = ( (n-1)/np.sqrt(n) ) * np.sqrt( stats.t.ppf(1-0.05/(2*n), n-2)**2 / (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2) )
+                crit = ((n-1)/np.sqrt(n)) * np.sqrt(stats.t.ppf(1-0.05/(2*n), n-2)**2 / (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2))
                 if G > crit:
                     lab_num = max_idx + 1
                     grubbs_outliers.append((lab_num, G, crit))
@@ -123,10 +123,10 @@ if df is not None:
             results["outlier_grubbs"] = results.index.map(lambda i: any(i+1==o[0] for o in grubbs_outliers))
             for lab_num, G_val, crit_val in grubbs_outliers:
                 outlier_suggestions.append(
-                    f"Lab {lab_num}: Grubbs G = {G_val:.4f} > kritik {crit_val:.4f} → En uç değer, outlier olarak değerlendirilir."
+                    f"Lab {lab_num}: Grubbs G = {G_val:.4f} > critical {crit_val:.4f} → Extreme value, considered outlier."
                 )
         except Exception as e:
-            st.warning(f"Grubbs test çalıştırılamadı: {e}")
+            st.warning(f"Grubbs test could not be executed: {e}")
 
     st.subheader("✅ Results")
     st.dataframe(results, use_container_width=True)
@@ -136,17 +136,17 @@ if df is not None:
         for s in outlier_suggestions:
             st.markdown(f"- {s}")
     else:
-        st.markdown("Tespit edilen outlier yok. Veriler çoğunlukla konsensüs ile uyumlu.")
+        st.markdown("No outliers detected. Data mostly aligns with the consensus.")
 
     # --- Plot with lab IDs and colored outliers
     st.subheader("📈 Visualization")
     fig, ax = plt.subplots(figsize=(9, 4))
     lab_ids = np.arange(1, len(results) + 1)
 
-    # Outlier maskesi
+    # Outlier mask
     outlier_mask = results.get("outlier_z", False) | results.get("outlier_modz", False) | results.get("outlier_grubbs", False)
 
-    # Normal ve outlier noktaları ayrı plotla
+    # Normal and outlier points
     ax.errorbar(lab_ids[~outlier_mask], results[x_col][~outlier_mask],
                 yerr=results[u_col][~outlier_mask], fmt='o', color='blue', label='Normal')
     ax.errorbar(lab_ids[outlier_mask], results[x_col][outlier_mask],
@@ -159,3 +159,20 @@ if df is not None:
     ax.set_ylabel("Measured value")
     ax.legend(fontsize=8)
     st.pyplot(fig)
+
+    # --- Residual plot vs NIST CE consensus
+    st.subheader("📊 Deviation from Consensus (Residuals)")
+    fig2, ax2 = plt.subplots(figsize=(9,4))
+
+    residuals = results[x_col] - consensus
+
+    ax2.bar(lab_ids[~outlier_mask], residuals[~outlier_mask], color='blue', label='Normal')
+    ax2.bar(lab_ids[outlier_mask], residuals[outlier_mask], color='red', label='Outlier')
+
+    ax2.axhline(0, color='green', linestyle='--', label="Consensus")
+    ax2.axhspan(ci95_low - consensus, ci95_high - consensus, color='green', alpha=0.2, label="95% CI")
+    ax2.set_xlabel("Lab ID")
+    ax2.set_ylabel("Deviation from Consensus")
+    ax2.set_xticks(lab_ids)
+    ax2.legend(fontsize=8)
+    st.pyplot(fig2)
