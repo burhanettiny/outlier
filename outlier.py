@@ -8,7 +8,7 @@ from scipy import stats
 st.set_page_config(page_title="Interlaboratory Comparison Tool", layout="wide")
 st.title("🔬 Interlaboratory Comparison & Outlier Detection")
 
-st.write("👉 Copy your data from Excel and paste it below (Ctrl+V).")
+st.write("👉 Copy your Excel data and paste it into the box below (Ctrl+V).")
 
 # --- Paste Excel data
 pasted_data = st.text_area("Paste here:", height=200)
@@ -19,7 +19,7 @@ if pasted_data:
         df = pd.read_csv(io.StringIO(pasted_data), sep="\t")
         st.success("✅ Data parsed successfully!")
     except Exception as e:
-        st.error(f"Failed to read data: {e}")
+        st.error(f"Data could not be read: {e}")
 
 if df is not None:
     st.subheader("📊 Input Data")
@@ -62,11 +62,11 @@ if df is not None:
     try:
         stat, p_val = stats.normaltest(df[x_col])
         if p_val > 0.05:
-            method_suggestion = "Data is normally distributed → Grubbs test is suitable."
+            method_suggestion = "Data appears normally distributed → Grubbs test is recommended."
         else:
-            method_suggestion = "Data is non-normal or heterogeneous → Modified Z-score is recommended."
+            method_suggestion = "Data is not normal or is heterogeneous → Modified Z-score is recommended."
     except:
-        method_suggestion = "Z-score or Modified Z-score can be used."
+        method_suggestion = "Either Z-score or Modified Z-score can be used."
     st.sidebar.info(f"Suggestion: {method_suggestion}")
 
     methods = st.sidebar.multiselect(
@@ -85,7 +85,7 @@ if df is not None:
         for i, row in results.iterrows():
             if row["outlier_z"]:
                 outlier_suggestions.append(
-                    f"Lab {i+1}: Z-score = {row['zscore']:.2f} → This measurement exceeds 2σ limit, possible measurement error or lab deviation."
+                    f"Lab {i+1}: Z-score = {row['zscore']:.2f} → This value is outside the 2σ range, possible measurement error or lab deviation."
                 )
 
     if "Modified Z-score" in methods:
@@ -98,7 +98,7 @@ if df is not None:
         for i, row in results.iterrows():
             if row["outlier_modz"]:
                 outlier_suggestions.append(
-                    f"Lab {i+1}: Modified Z-score = {row['modz']:.2f} → This measurement deviates more than 3.5 MAD from the median, caution advised."
+                    f"Lab {i+1}: Modified Z-score = {row['modz']:.2f} → This measurement deviates more than 3.5×MAD from the median, should be reviewed."
                 )
 
     if "Grubbs test" in methods:
@@ -112,7 +112,10 @@ if df is not None:
                 diff = np.abs(data - mean_x)
                 max_idx = diff.idxmax()
                 G = diff[max_idx] / std_x
-                crit = ((n-1)/np.sqrt(n)) * np.sqrt(stats.t.ppf(1-0.05/(2*n), n-2)**2 / (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2))
+                crit = ((n-1)/np.sqrt(n)) * np.sqrt(
+                    stats.t.ppf(1-0.05/(2*n), n-2)**2 /
+                    (n-2 + stats.t.ppf(1-0.05/(2*n), n-2)**2)
+                )
                 if G > crit:
                     lab_num = max_idx + 1
                     grubbs_outliers.append((lab_num, G, crit))
@@ -120,13 +123,13 @@ if df is not None:
                     n = len(data)
                 else:
                     break
-            results["outlier_grubbs"] = results.index.map(lambda i: any(i+1==o[0] for o in grubbs_outliers))
+            results["outlier_grubbs"] = results.index.map(lambda i: any(i+1 == o[0] for o in grubbs_outliers))
             for lab_num, G_val, crit_val in grubbs_outliers:
                 outlier_suggestions.append(
-                    f"Lab {lab_num}: Grubbs G = {G_val:.4f} > critical {crit_val:.4f} → Extreme value, considered outlier."
+                    f"Lab {lab_num}: Grubbs G = {G_val:.4f} > critical {crit_val:.4f} → This extreme value is identified as an outlier."
                 )
         except Exception as e:
-            st.warning(f"Grubbs test could not be executed: {e}")
+            st.warning(f"Grubbs test failed: {e}")
 
     st.subheader("✅ Results")
     st.dataframe(results, use_container_width=True)
@@ -136,21 +139,25 @@ if df is not None:
         for s in outlier_suggestions:
             st.markdown(f"- {s}")
     else:
-        st.markdown("No outliers detected. Data mostly aligns with the consensus.")
+        st.markdown("No outliers detected. Data is largely consistent with the consensus.")
 
-    # --- Plot with lab IDs and colored outliers
+    # --- Outlier mask (safe handling)
+    outlier_mask = (
+        results.get("outlier_z", pd.Series(False, index=results.index)) |
+        results.get("outlier_modz", pd.Series(False, index=results.index)) |
+        results.get("outlier_grubbs", pd.Series(False, index=results.index))
+    )
+
+    lab_ids = results.index + 1  # Lab IDs start from 1
+
+    # --- Main visualization
     st.subheader("📈 Visualization")
     fig, ax = plt.subplots(figsize=(9, 4))
-    lab_ids = np.arange(1, len(results) + 1)
 
-    # Outlier mask
-    outlier_mask = results.get("outlier_z", False) | results.get("outlier_modz", False) | results.get("outlier_grubbs", False)
-
-    # Normal and outlier points
-    ax.errorbar(lab_ids[~outlier_mask], results[x_col][~outlier_mask],
-                yerr=results[u_col][~outlier_mask], fmt='o', color='blue', label='Normal')
-    ax.errorbar(lab_ids[outlier_mask], results[x_col][outlier_mask],
-                yerr=results[u_col][outlier_mask], fmt='o', color='red', label='Outlier')
+    ax.errorbar(lab_ids[~outlier_mask], results.loc[~outlier_mask, x_col],
+                yerr=results.loc[~outlier_mask, u_col], fmt='o', color='blue', label='Normal')
+    ax.errorbar(lab_ids[outlier_mask], results.loc[outlier_mask, x_col],
+                yerr=results.loc[outlier_mask, u_col], fmt='o', color='red', label='Outlier')
 
     ax.axhline(consensus, color='green', linestyle='--', label="Consensus")
     ax.axhspan(ci95_low, ci95_high, color='green', alpha=0.2, label="95% CI")
@@ -162,7 +169,7 @@ if df is not None:
 
     # --- Residual plot vs NIST CE consensus
     st.subheader("📊 Deviation from Consensus (Residuals)")
-    fig2, ax2 = plt.subplots(figsize=(9,4))
+    fig2, ax2 = plt.subplots(figsize=(9, 4))
 
     residuals = results[x_col] - consensus
 
